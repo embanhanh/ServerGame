@@ -45,6 +45,7 @@ socketIO.on('connection',(socket)=>{
             roomMaster: userId,
             roomMembers: [
                 { 
+                    socketId: socket.id,
                     Id: userId,
                     displayName: userName,
                     isReady: true,
@@ -65,7 +66,6 @@ socketIO.on('connection',(socket)=>{
             isShowResult:false,
             isGuessKeyword:false,
             guessKeyword: [], 
-            isShowVoteResult: false,
             idroom,
             locked: password === '' ? false : password,
             winer: '',
@@ -82,12 +82,13 @@ socketIO.on('connection',(socket)=>{
         const roominfo = rooms.find((room)=>room.idroom === id)
         if(roominfo){
             roominfo.roomMembers.push({ 
-              Id: userId,
-              displayName: userName,
-              isReady: false,
-              isGhost: false,
-              answer: '',
-              votes: 0
+                socketId : socket.id,
+                Id: userId,
+                displayName: userName,
+                isReady: false,
+                isGhost: false,
+                answer: '',
+                votes: 0
             })
             roominfo.chats.push({displayName: 'Hệ thống: ', message: `${userName} đã vào phòng`, id: 'system'})
         }
@@ -106,7 +107,9 @@ socketIO.on('connection',(socket)=>{
                 rooms = rooms.filter((room)=>room.idroom !== idroom)
             }else{
               if(userId === roominfo.roomMaster){
-                  roominfo.roomMaster = roominfo.roomMembers[random(roominfo.roomMembers.length)].Id
+                    const num = random(roominfo.roomMembers.length)
+                    roominfo.roomMaster = roominfo.roomMembers[num].Id
+                    roominfo.roomMembers[num].isReady = true
               }
               roominfo.chats.push({displayName: 'Hệ thống: ', message: `${userName} đã rời phòng`, id: 'system'})
               socketIO.to(idroom).emit('player-joined',roominfo)
@@ -149,10 +152,12 @@ socketIO.on('connection',(socket)=>{
             socketIO.to(idroom).emit('chats',roominfo.chats)
             socketIO.except(idroom).emit('room-list',rooms)
             startTime = Date.now()
-            duration = 15000
+            duration = 16000
             const idInterval = setInterval(()=>{
-                let remainTime = Math.round((duration - (Date.now()-startTime))/1000)
-                socketIO.to(idroom).emit('updateCountdown', remainTime)
+                let remainTime = Math.floor((duration - (Date.now()-startTime))/1000)
+                if(!roominfo.isShowResult && !roominfo.isEndRound2){
+                    socketIO.to(idroom).emit('updateCountdown', remainTime)
+                }
                 if(remainTime === 0 && roominfo.round === 0){
                     roominfo.round = 1
                     roominfo.isStartAnswer = true
@@ -219,6 +224,16 @@ socketIO.on('connection',(socket)=>{
                         startTime = Date.now()
                     }
                 }else if(remainTime === 0 && roominfo.isShowResult){
+                    roominfo.chats.push({displayName: 'Hệ thống: ', message: 'Kết thúc lượt chơi', id: 'system'})
+                    roominfo.roomMembers = roominfo.roomMembers.filter((mb)=>{
+                        if(mb.socketId === null){
+                            roominfo.chats.push({displayName: 'Hệ thống: ', message: `${mb.displayName} đã rời phòng`, id: 'system'})
+                        }
+                        return mb.socketId !== null
+                    })
+                    if(roominfo.roomMembers.length === 0){
+                        rooms = rooms.filter((room)=>room.idroom !== idroom)
+                    }
                     roominfo.roomMembers.forEach((mb)=>{
                         if(mb.Id !== roominfo.roomMaster){
                             mb.isReady = false
@@ -232,7 +247,6 @@ socketIO.on('connection',(socket)=>{
                     roominfo.round = 0
                     roominfo.isStart = false
                     roominfo.isShowResult = false
-                    roominfo.chats.push({displayName: 'Hệ thống: ', message: 'Kết thúc lượt chơi', id: 'system'})
                     socketIO.to(idroom).emit('player-joined',roominfo)
                     socketIO.to(idroom).emit('chats',roominfo.chats)
                     socketIO.except(idroom).emit('room-list',rooms)
@@ -297,6 +311,39 @@ socketIO.on('connection',(socket)=>{
             socketIO.to(idroom).emit('chats',roominfo.chats)
         }
     })
+
+    socket.on('disconnect',()=>{
+        console.log(`${socket.id} vừa ngắt kết nối`);
+        const roominfo = rooms.find(room =>{
+            const finalRoom = room.roomMembers.filter(mb => mb.socketId === socket.id)
+            return finalRoom.length > 0
+        })
+        if(roominfo){
+            const member = roominfo.roomMembers.find((member)=>member.socketId === socket.id)
+            if(roominfo.isStart){
+                member.socketId = null
+            }else{
+                roominfo.roomMembers = roominfo.roomMembers.filter((mb)=>{
+                    if(mb.socketId === socket.id){
+                        roominfo.chats.push({displayName: 'Hệ thống: ', message: `${mb.displayName} đã rời phòng`, id: 'system'})
+                        socketIO.to(roominfo.idroom).emit('chats',roominfo.chats)
+                    }
+                    return mb.socketId !== socket.id
+                })
+            }
+            if(roominfo.roomMembers.length === 0){
+                rooms = rooms.filter((room)=>room.idroom !== roominfo.idroom)
+            }
+            if(member.Id === roominfo.roomMaster){
+                const num = random(roominfo.roomMembers.length)
+                roominfo.roomMaster = roominfo.roomMembers[num].Id
+                roominfo.roomMembers[num].isReady = true
+            }
+            socketIO.to(roominfo.idroom).emit('player-joined',roominfo)
+            socketIO.except(roominfo.idroom).emit('room-list',rooms)
+        }
+    })
+    
 })
 
 app.get("/api", (req, res) => {
