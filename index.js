@@ -40,7 +40,7 @@ socketIO.on('connection',(socket)=>{
         socket.emit('room-list',rooms)
     })
 
-    socket.on('create-room',({idroom,password,maxPlayers, userId, userName})=>{
+    socket.on('create-room',({idroom,password,maxPlayers, userId, userName, userAvatar})=>{
         const roominfo ={
             roomMaster: userId,
             roomMembers: [
@@ -48,6 +48,7 @@ socketIO.on('connection',(socket)=>{
                     socketId: socket.id,
                     Id: userId,
                     displayName: userName,
+                    photoURL: userAvatar,
                     isReady: true,
                     isGhost: false,
                     answer: '',
@@ -85,6 +86,7 @@ socketIO.on('connection',(socket)=>{
                 socketId : socket.id,
                 Id: userId,
                 displayName: userName,
+                photoURL: userAvatar,
                 isReady: false,
                 isGhost: false,
                 answer: '',
@@ -225,28 +227,38 @@ socketIO.on('connection',(socket)=>{
                     }
                 }else if(remainTime === 0 && roominfo.isShowResult){
                     roominfo.chats.push({displayName: 'Hệ thống: ', message: 'Kết thúc lượt chơi', id: 'system'})
+                    let memberMaster = null
                     roominfo.roomMembers = roominfo.roomMembers.filter((mb)=>{
                         if(mb.socketId === null){
                             roominfo.chats.push({displayName: 'Hệ thống: ', message: `${mb.displayName} đã rời phòng`, id: 'system'})
+                            if (mb.Id === roominfo.roomMaster){
+                                memberMaster = mb
+                            }
                         }
                         return mb.socketId !== null
                     })
                     if(roominfo.roomMembers.length === 0){
                         rooms = rooms.filter((room)=>room.idroom !== idroom)
-                    }
-                    roominfo.roomMembers.forEach((mb)=>{
-                        if(mb.Id !== roominfo.roomMaster){
-                            mb.isReady = false
+                    }else{
+                        if(memberMaster !== null){
+                            const num = random(roominfo.roomMembers.length)
+                            roominfo.roomMaster = roominfo.roomMembers[num].Id
+                            roominfo.roomMembers[num].isReady = true
                         }
-                        mb.answer = ''
-                        mb.isGhost = false
-                        mb.votes = 0
-                    })
-                    roominfo.answers = [], 
-                    roominfo.guessKeyword = [],
-                    roominfo.round = 0
-                    roominfo.isStart = false
-                    roominfo.isShowResult = false
+                        roominfo.roomMembers.forEach((mb)=>{
+                            if(mb.Id !== roominfo.roomMaster){
+                                mb.isReady = false
+                            }
+                            mb.answer = ''
+                            mb.isGhost = false
+                            mb.votes = 0
+                        })
+                        roominfo.answers = [], 
+                        roominfo.guessKeyword = [],
+                        roominfo.round = 0
+                        roominfo.isStart = false
+                        roominfo.isShowResult = false
+                    }
                     socketIO.to(idroom).emit('player-joined',roominfo)
                     socketIO.to(idroom).emit('chats',roominfo.chats)
                     socketIO.except(idroom).emit('room-list',rooms)
@@ -330,14 +342,13 @@ socketIO.on('connection',(socket)=>{
                     }
                     return mb.socketId !== socket.id
                 })
-            }
-            if(roominfo.roomMembers.length === 0){
-                rooms = rooms.filter((room)=>room.idroom !== roominfo.idroom)
-            }
-            if(member.Id === roominfo.roomMaster){
-                const num = random(roominfo.roomMembers.length)
-                roominfo.roomMaster = roominfo.roomMembers[num].Id
-                roominfo.roomMembers[num].isReady = true
+                if(roominfo.roomMembers.length === 0){
+                    rooms = rooms.filter((room)=>room.idroom !== roominfo.idroom)
+                }else if (member.Id === roominfo.roomMaster){
+                    const num = random(roominfo.roomMembers.length)
+                    roominfo.roomMaster = roominfo.roomMembers[num].Id
+                    roominfo.roomMembers[num].isReady = true
+                }
             }
             socketIO.to(roominfo.idroom).emit('player-joined',roominfo)
             socketIO.except(roominfo.idroom).emit('room-list',rooms)
