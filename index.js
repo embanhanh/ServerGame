@@ -27,8 +27,6 @@ function createUniqueId() {
 }
 
 let rooms = [];
-let startTime = 0
-let duration = 15000
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -70,7 +68,9 @@ socketIO.on('connection',(socket)=>{
             idroom,
             locked: password === '' ? false : password,
             winer: '',
-            chats:[{displayName: 'Hệ thống: ', message: `${userName} đã vào phòng`, id: 'system'}]
+            chats:[{displayName: 'Hệ thống: ', message: `${userName} đã vào phòng`, id: 'system'}],
+            startTime: 0,
+            duration: 16000
         }
         socket.join(idroom)
         rooms.push(roominfo)
@@ -79,7 +79,7 @@ socketIO.on('connection',(socket)=>{
         socketIO.except(idroom).emit('room-list',rooms)
     })
 
-    socket.on('join-room',({id,userId,userName})=>{
+    socket.on('join-room',({id,userId,userName, userAvatar})=>{
         const roominfo = rooms.find((room)=>room.idroom === id)
         if(roominfo){
             roominfo.roomMembers.push({ 
@@ -153,10 +153,10 @@ socketIO.on('connection',(socket)=>{
             socketIO.to(idroom).emit('player-joined',roominfo)
             socketIO.to(idroom).emit('chats',roominfo.chats)
             socketIO.except(idroom).emit('room-list',rooms)
-            startTime = Date.now()
-            duration = 16000
+            roominfo.startTime = Date.now()
+            roominfo.duration = 16000
             const idInterval = setInterval(()=>{
-                let remainTime = Math.floor((duration - (Date.now()-startTime))/1000)
+                let remainTime = Math.floor((roominfo.duration - (Date.now()-roominfo.startTime))/1000)
                 if(!roominfo.isShowResult && !roominfo.isEndRound2){
                     socketIO.to(idroom).emit('updateCountdown', remainTime)
                 }
@@ -164,7 +164,7 @@ socketIO.on('connection',(socket)=>{
                     roominfo.round = 1
                     roominfo.isStartAnswer = true
                     socketIO.to(idroom).emit('player-joined',roominfo)
-                    startTime = Date.now()
+                    roominfo.startTime = Date.now()
                 }else if(remainTime === 0 && roominfo.isStartAnswer){
                     roominfo.roomMembers[roominfo.memberAnswer].answer = "..."
                     roominfo.answers.push({displayName: roominfo.roomMembers[roominfo.memberAnswer].displayName, answer: "..."})
@@ -176,7 +176,7 @@ socketIO.on('connection',(socket)=>{
                     }
                     socketIO.to(idroom).emit('player-joined',roominfo)
                     socketIO.to(idroom).emit('chats',roominfo.chats)
-                    startTime = Date.now()
+                    roominfo.startTime = Date.now()
                 }else if(remainTime === 0 && roominfo.isStartVote && roominfo.round === 1){
                     roominfo.roomMembers.forEach(member => {
                         member.answer = ""
@@ -190,7 +190,7 @@ socketIO.on('connection',(socket)=>{
                     )
                     socketIO.to(idroom).emit('chats',roominfo.chats)
                     socketIO.to(idroom).emit('player-joined',roominfo)
-                    startTime = Date.now()
+                    roominfo.startTime = Date.now()
                 }else if(remainTime === 0 && roominfo.isStartVote && roominfo.round === 2){
                     roominfo.roomMembers.forEach(member => {
                         member.answer = ""
@@ -198,8 +198,8 @@ socketIO.on('connection',(socket)=>{
                     roominfo.isEndRound2 = true
                     roominfo.isStartVote = false
                     socketIO.to(idroom).emit('player-joined',roominfo)
-                    duration = 5000
-                    startTime = Date.now()
+                    roominfo.duration = 5000
+                    roominfo.startTime = Date.now()
                 }else if(remainTime === 0 && roominfo.isEndRound2){
                     const topVotes = [...roominfo.roomMembers]
                     const top3 = topVotes.sort((a, b) => b.votes - a.votes).slice(0,3)
@@ -211,19 +211,19 @@ socketIO.on('connection',(socket)=>{
                     })
                     if((roominfo.roomMembers.length > 5 && count !== 2) || (roominfo.roomMembers.length <= 5 && count !== 1)){
                         roominfo.isEndRound2 = false
-                        roominfo.winer = 'Ghost'
+                        roominfo.winer = 'Ghost'     
                         roominfo.isShowResult = true
                         socketIO.to(idroom).emit('player-joined',roominfo)
-                        duration = 4000
-                        startTime = Date.now()
+                        roominfo.duration = 4000
+                        roominfo.startTime = Date.now()
                     }else{
                         roominfo.isGuessKeyword = true
                         roominfo.chats.push({displayName: 'Hệ thống: ', message: 'Village đã bắt được các Evil Ghost, các Evil Ghost hãy đoán từ khóa', id: 'system'})
                         roominfo.isEndRound2 = false
                         socketIO.to(idroom).emit('player-joined',roominfo)
                         socketIO.to(idroom).emit('chats',roominfo.chats)
-                        duration = 15000
-                        startTime = Date.now()
+                        roominfo.duration = 15000
+                        roominfo.startTime = Date.now()
                     }
                 }else if(remainTime === 0 && roominfo.isShowResult){
                     roominfo.chats.push({displayName: 'Hệ thống: ', message: 'Kết thúc lượt chơi', id: 'system'})
@@ -278,8 +278,8 @@ socketIO.on('connection',(socket)=>{
                     roominfo.isShowResult = true
                     roominfo.isGuessKeyword = false
                     socketIO.to(idroom).emit('player-joined',roominfo)
-                    duration = 4000
-                    startTime = Date.now()
+                    roominfo.duration = 4000
+                    roominfo.startTime = Date.now()
                 }
             },200)
         }
@@ -298,7 +298,7 @@ socketIO.on('connection',(socket)=>{
                 socketIO.to(idroom).emit('chats',roominfo.chats)
             }
             socketIO.to(idroom).emit('player-joined',roominfo)
-            startTime = Date.now()
+            roominfo.startTime = Date.now()
         }else{
             roominfo.roomMembers.forEach(mb=>{
                 if(mb.Id === userId){
@@ -354,7 +354,10 @@ socketIO.on('connection',(socket)=>{
             socketIO.except(roominfo.idroom).emit('room-list',rooms)
         }
     })
-    
+    socket.on('log-roominfo',({roomid})=>{
+        const roominfo = rooms.find((room)=>room.idroom === roomid) 
+        console.log(roominfo);
+    })
 })
 
 app.get("/api", (req, res) => {
