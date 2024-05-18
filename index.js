@@ -22,10 +22,6 @@ const handleString = (string)=>{
     }
 }
 
-function createUniqueId() {
-  return Math.random().toString(20).substring(2, 10);
-}
-
 let rooms = [];
 
 app.use(express.urlencoded({ extended: true }));
@@ -132,7 +128,7 @@ socketIO.on('connection',(socket)=>{
 
     socket.on('start-game',({keywords,idroom})=>{
         const roominfo = rooms.find((room)=>room.idroom === idroom)
-        if(roominfo){
+        if(roominfo && keywords){
             roominfo.keyword = keywords[random(keywords.length)]
             const num1 = random(roominfo.roomMembers.length)
             roominfo.roomMembers[num1].isGhost = true
